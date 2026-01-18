@@ -1,8 +1,25 @@
+import sys
+import os
+
+# Optional: auto-relaunch with Python 3.10 on Windows (MediaPipe compatibility)
+# If you don't want this behavior, delete this block.
+if os.name == "nt":
+    try:
+        if sys.version_info[:2] != (3, 10):
+            import subprocess
+            print("[INFO] Re-launching with Python 3.10 (py -3.10)...")
+            subprocess.check_call(["py", "-3.10"] + sys.argv)
+            raise SystemExit(0)
+    except FileNotFoundError:
+        # 'py' launcher not installed; continue and let import errors happen if any
+        pass
+
+import time
+import glob
+import subprocess
 import cv2
 import mediapipe as mp
 import numpy as np
-import sys
-import os
 
 mp_hands = mp.solutions.hands
 hands = mp_hands.Hands(
@@ -35,6 +52,7 @@ def count_fingers(hand_landmarks, handedness):
 
 
 def classify_video(video_path, sample_frames=30):
+    # Keep debug prints if you want; the LAST line printed by main will be the answer.
     print(f"[DEBUG] Opening video: {video_path}")
 
     if not os.path.exists(video_path):
@@ -61,35 +79,27 @@ def classify_video(video_path, sample_frames=30):
     detected_frames = 0
 
     for idx in frame_indices:
-        cap.set(cv2.CAP_PROP_POS_FRAMES, idx)
+        cap.set(cv2.CAP_PROP_POS_FRAMES, int(idx))
         ret, frame = cap.read()
 
         if not ret or frame is None:
             print(f"[WARN] Failed to read frame {idx}")
             continue
 
-        print(f"[DEBUG] Processing frame {idx}")
-
         rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
         result = hands.process(rgb)
 
         if result.multi_hand_landmarks is None:
-            print(f"[DEBUG] No hand detected in frame {idx}")
             continue
 
-        print(f"[DEBUG] HAND DETECTED in frame {idx}")
         detected_frames += 1
-
         hand_lms = result.multi_hand_landmarks[0]
 
         if not result.multi_handedness:
-            print("[WARN] Hand landmarks found but handedness missing")
             continue
 
         handedness = result.multi_handedness[0].classification[0].label
         finger_count = count_fingers(hand_lms, handedness)
-
-        print(f"[DEBUG] Frame {idx}: handedness={handedness}, fingers={finger_count}")
         counts.append(finger_count)
 
         # Optional: save first detected frame
@@ -102,24 +112,99 @@ def classify_video(video_path, sample_frames=30):
     print(f"[DEBUG] Frames with hand detected: {detected_frames}/{len(frame_indices)}")
 
     if not counts:
-        print("[DEBUG] No valid finger counts collected")
         return None
 
     final = int(round(np.median(counts)))
     print(f"[DEBUG] Final finger count (median): {final}")
-
     return final
 
 
-if __name__ == "__main__":
-    if len(sys.argv) < 2:
-        print("ERROR: No video path provided")
-        sys.exit(1)
+def newest_mp4_in(dirpath: str):
+    files = glob.glob(os.path.join(dirpath, "*.mp4"))
+    if not files:
+        return None
+    return max(files, key=os.path.getmtime)
 
-    video_path = video_path = r"C:\Users\neomu\OneDrive\Desktop\QNX_Project\incoming\clip_20260118_041429.mp4"
-    result = classify_video(video_path)
 
+def trigger_and_wait_then_classify(
+    seconds=5,
+    expected=3,
+    trigger_url_base="http://localhost:8000",
+    incoming_dir=None,
+    timeout_s=90,
+    poll_interval_s=0.5,
+):
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+
+    # IMPORTANT: incoming is one directory higher than /pc
+    if incoming_dir is None:
+        incoming_dir = os.path.abspath(os.path.join(script_dir, "..", "incoming"))
+
+    os.makedirs(incoming_dir, exist_ok=True)
+
+    before = newest_mp4_in(incoming_dir)
+    before_ts = os.path.getmtime(before) if before else 0
+    print(f"[INFO] Incoming dir: {incoming_dir}")
+    print(f"[INFO] Newest before: {before}")
+
+    url = f"{trigger_url_base}/trigger?seconds={seconds}&expected={expected}"
+    print(f"[INFO] Triggering: {url}")
+
+    # Use curl.exe like you requested
+    r = subprocess.run(["curl.exe", "-sS", url], capture_output=True, text=True)
+    if r.returncode != 0:
+        print(f"[ERROR] curl.exe failed (rc={r.returncode})")
+        if r.stderr:
+            print(r.stderr.strip())
+        return 2
+
+    print(f"[INFO] Trigger response: {r.stdout.strip()}")
+
+    print(f"[INFO] Waiting for new upload in '{incoming_dir}' (timeout {timeout_s}s)...")
+    deadline = time.time() + timeout_s
+    new_file = None
+
+    while time.time() < deadline:
+        cand = newest_mp4_in(incoming_dir)
+        if cand:
+            ts = os.path.getmtime(cand)
+            if ts > before_ts and cand != before:
+                # small settle time so file write finishes
+                time.sleep(0.25)
+                new_file = cand
+                break
+        time.sleep(poll_interval_s)
+
+    if not new_file:
+        print("UNKNOWN")
+        print("[ERROR] Timed out waiting for a new mp4 upload.")
+        return 3
+
+    print(f"[INFO] Got new upload: {new_file}")
+
+    result = classify_video(new_file)
     if result is None:
         print("UNKNOWN")
-    else:
+        return 1
+
+    # FINAL answer line (server logic uses last non-empty line)
+    print(result)
+    return 0
+
+
+if __name__ == "__main__":
+    # Mode A: classify explicit file (used by upload_server)
+    #   py -3.10 finger_counter.py ..\incoming\clip_....mp4
+    #
+    # Mode B: no args -> trigger Pi, wait for upload, then classify newest file
+    #   py -3.10 finger_counter.py
+    if len(sys.argv) >= 2:
+        video_path = sys.argv[1]
+        result = classify_video(video_path)
+        if result is None:
+            print("UNKNOWN")
+            sys.exit(1)
         print(result)
+        sys.exit(0)
+    else:
+        sys.exit(trigger_and_wait_then_classify(seconds=5, expected=3))

@@ -1,0 +1,85 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>QNX Pi Recorder Dashboard</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <div class="shell">
+    <header class="header">
+      <div>
+        <h1>QNX Pi Recorder</h1>
+        <p class="sub">Trigger recording on the Pi, receive uploads, and review results.</p>
+      </div>
+      <div class="pill" id="serverPill">Server: unknown</div>
+    </header>
+
+    <main class="grid">
+      <section class="card">
+        <h2>Trigger</h2>
+
+        <div class="row">
+          <label>
+            Seconds
+            <input id="seconds" type="number" min="1" max="60" value="5" />
+          </label>
+
+          <label>
+            Expected fingers
+            <input id="expected" type="number" min="0" max="5" value="3" />
+          </label>
+        </div>
+
+        <div class="row actions">
+          <button id="triggerBtn" class="btn primary">Record & Upload</button>
+          <button id="refreshBtn" class="btn">Refresh</button>
+        </div>
+
+        <div class="status">
+          <div class="label">Status</div>
+          <div id="statusText" class="statusText">Idle</div>
+          <div class="progressWrap">
+            <div id="progressBar" class="progressBar"></div>
+          </div>
+        </div>
+
+        <div class="result">
+          <div>
+            <div class="label">Last result</div>
+            <div id="lastResult" class="big">—</div>
+          </div>
+          <div>
+            <div class="label">Last clip</div>
+            <div id="lastClip" class="mono">—</div>
+          </div>
+        </div>
+      </section>
+
+      <section class="card">
+        <h2>Preview</h2>
+        <video id="player" controls playsinline></video>
+        <div class="meta">
+          <div class="label">Selected</div>
+          <div id="selectedName" class="mono">None</div>
+        </div>
+      </section>
+
+      <section class="card wide">
+        <div class="listHeader">
+          <h2>Incoming clips</h2>
+          <div class="hint">Newest first</div>
+        </div>
+        <div id="clipList" class="clipList"></div>
+      </section>
+    </main>
+
+    <footer class="footer">
+      <span class="mono">Tip:</span> Keep <span class="mono">upload_server.py</span> running and the Pi agent polling.
+    </footer>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>

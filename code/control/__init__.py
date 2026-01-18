@@ -1,1 +1,0 @@
-# NEW (vision → FNAF actions)

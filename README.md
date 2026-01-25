@@ -33,7 +33,7 @@ pip install -r requirements.txt
 
 ### 1. Windows Server Setup
 
-1. Navigate to the directory containing `upload_server.py` and `finger_counter.py`.
+1. Navigate to the directory containing `pc` directory.
 
 2. Install the required Python dependencies:
 
